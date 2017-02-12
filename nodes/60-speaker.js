@@ -1,4 +1,4 @@
-/* Copyright 2016 Streampunk Media Ltd.
+/* Copyright 2017 Streampunk Media Ltd.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ module.exports = function (RED) {
     var audioStarted = false;
     var node = this;
 
-    this.each(function (x, next) {
+    this.each((x, next) => {
       if (!Grain.isGrain(x)) {
         node.warn('Received non-Grain payload.');
         return next();
@@ -39,7 +39,7 @@ module.exports = function (RED) {
       var nextJob = (node.srcFlow) ?
         Promise.resolve(x) :
         (Promise.denodeify(node.getNMOSFlow, 1))(x)
-        .then(function (f) {
+        .then(f => {
           node.srcFlow = f;
           var audioOptions = {};
           node.bitsPerSample = +f.tags.encodingName[0].substring(1);
@@ -66,22 +66,22 @@ module.exports = function (RED) {
             audioOptions.deviceIndex = config.deviceIndex;
           }
           audioOutput = new naudiodon.AudioWriter(audioOptions);
-          return new Promise(function (accept, reject) {
-            var happyCallback = function (pa) {
+          return new Promise((accept, reject) => {
+            var happyCallback = pa => {
               audioOutput.removeListener('error', reject);
-              audioOutput.on('error', function (err) {
+              audioOutput.on('error', err => {
                 node.error(`Error received from port audio library: ${err}`);
               });
               accept(x);
             };
-            audioOutput.once('error', function (err) {
+            audioOutput.once('error', err => {
               audioOutput.removeListener('audio_ready', happyCallback);
               reject(err);
             });
             audioOutput.once('audio_ready', happyCallback);
           });
         });
-      nextJob.then(function (g) {
+      nextJob.then(g => {
         var capacity = audioOutput.write(swapBytes(g, node.bitsPerSample));
         if (audioStarted === false) {
           audioOutput.pa.start();
@@ -94,19 +94,19 @@ module.exports = function (RED) {
           audioOutput.once('drain', next);
         }
       })
-      .catch(function (err) {
+      .catch(err => {
         node.error(`Failed to play sound on device '${config.deviceIndex}': ${err}`);
       });
     }); // this.each
-    this.errors(function (e, next) {
+    this.errors((e, next) => {
       node.warn(`Received unhandled error: ${e.message}.`);
       setImmediate(next);
     });
-    this.done(function () {
+    this.done(() => {
       node.log('No more to hear here!');
       audioOutput.end();
     });
-    this.close(function () {
+    this.close(() => {
       node.log('Closing the speaker - too loud!');
       audioOutput.end();
     });
@@ -115,7 +115,7 @@ module.exports = function (RED) {
   RED.nodes.registerType("speaker", Speaker);
 
   function swapBytes(x, bitsPerSample) {
-    x.buffers.forEach(function (x) {
+    x.buffers.forEach(x => {
       switch (bitsPerSample) {
         case 24:
           var tmp = 0|0;
