@@ -63,7 +63,7 @@ module.exports = function (RED) {
           audioOptions.channelCount = +f.tags.channels[0];
           audioOptions.sampleRate = +f.tags.clockRate[0];
           if (config.deviceIndex >= 0) {
-            audioOptions.deviceIndex = config.deviceIndex;
+            audioOptions.deviceId= config.deviceIndex;
           }
           audioOutput = new naudiodon.AudioWriter(audioOptions);
           return new Promise((accept, reject) => {
