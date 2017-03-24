@@ -16,19 +16,20 @@
 
 <script type="text/javascript">
   RED.nodes.registerType('microphone',{
-    category: 'spout',
+    category: 'funnel',
     color: '#C39E60',
     defaults: {
       name : { value : "" },
       deviceIndex : { value : -1, validate: RED.validators.number() },
       encodingName : { value : "L16" },
       sampleRate : { value : 48000, validate: RED.validators.number() },
-      channels : { value : 2, validate: RED.validators.number() }
+      channels : { value : 2, validate: RED.validators.number() },
+      maxBuffer : { value : 10, validate : RED.validators.number() }
     },
-    inputs:1,
-    outputs:0,
-    align: 'right',
-    icon: "spout.png",
+    inputs:0,
+    outputs:1,
+    align: 'left',
+    icon: "funnel.png",
     label: function() {
       return this.name ||  "microphone";
     }
@@ -39,6 +40,10 @@
   <div class="form-row">
     <label for="node-input-name"><i class="fa fa-tag"></i> name</label>
     <input type="text" id="node-input-name" placeholder="name">
+  </div>
+  <div class="form-row">
+    <label for="node-input-maxBuffer"><i class="fa fa-suitcase"></i> max buffer</label>
+    <input type="number" id="node-input-maxBuffer" placeholder="10" style="width: 100px">
   </div>
   <div class="form-row">
     <label for="node-input-deviceIndex"><i class="fa fa-microphone" aria-hidden="true"></i> device</label>
@@ -86,6 +91,10 @@
    <tr>
     <td><i class="fa fa-tag" aria-hidden="true"></i> name</td>
     <td>Name of the node.</td>
+   </tr>
+   <tr>
+    <td><i class="fa fa-suitcase"></i> max buffer</td>
+    <td>Maximum number of grains to buffer before overflowing.</td>
    </tr>
    <tr>
     <td><i class="fa fa-map-signs"></i> encoding name</td>

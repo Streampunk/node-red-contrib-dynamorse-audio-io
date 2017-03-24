@@ -18,6 +18,32 @@ var util = require('util');
 var naudiodon = require('naudiodon');
 var Promise = require('promise');
 var Grain = require('node-red-contrib-dynamorse-core').Grain;
+var ledger = require('nmos-ledger');
+var H = require('highland');
+
+function swapBytes(x, bitsPerSample) {
+  switch (bitsPerSample) {
+    case 24:
+      var tmp = 0|0;
+      for ( var y = 0|0 ; y < x.length ; y += 3|0 ) {
+        tmp = x[y];
+        x[y] = x[y + 2];
+        x[y + 2] = tmp;
+      }
+      break;
+    case 16:
+      var tmp = 0|0;
+      for ( var y = 0|0 ; y < x.length ; y += 2|0 ) {
+        tmp = x[y];
+        x[y] = x[y + 1];
+        x[y + 1] = tmp;
+      }
+      break;
+    default: // No swap
+      break;
+  }
+  return x;
+}
 
 function chunker (pattern, blockAlign, bitsPerSample) {
   var grainCount = 0;
@@ -47,18 +73,18 @@ function chunker (pattern, blockAlign, bitsPerSample) {
 }
 
 module.exports = function (RED) {
-  function Speaker (config) {
+  function Microphone (config) {
     RED.nodes.createNode(this, config);
     redioactive.Funnel.call(this, config);
 
     this.bitsPerSample = +config.encodingName.slice(1);
-    this.blockAlign = (bitsPerSample * channels + 7) / 8 | 0;
     this.channels = config.channels;
+    this.blockAlign = (this.bitsPerSample * this.channels + 7) / 8 | 0;
     this.sampleRate = config.sampleRate;
     this.pattern = [ '1920' ];
 
     this.sampleFormat = naudiodon.SampleFormat16Bit;
-    switch (bitsPerSample) {
+    switch (this.bitsPerSample) {
       case 8: this.sampleFormat = naudiodon.SampleFormat8Bit; break;
       case 24: this.sampleFormat = naudiodon.SampleFormat16Bit; break;
       case 32: this.sampleFormat = naudiodon.SampleForamt32Bit; break;
@@ -87,13 +113,15 @@ module.exports = function (RED) {
       "urn:x-nmos:format:audio", null, null, pipelinesID, null);
     var flow = new ledger.Flow(null, null, localName, localDescription,
       "urn:x-nmos:format:audio", this.tags, source.id, null);
-    audioInput.once('audio_ready', () => { audioInput.pa.start(); });
-    nodeAPI.putResource(source)
+    audioInput.once('audio_ready', pa => {
+      this.log('Audio is ready!!!!');
+      nodeAPI.putResource(source)
       .then(() => nodeAPI.putResource(flow))
       .then(() => {
+        this.log('Creating highland stream to pipe in audio input.');
         this.highland(
           H(audioInput)
-          .through(chunker(this.pattern, this.blockAlign))
+          .through(chunker(this.pattern, this.blockAlign, this.bitsPerSample))
           .map(b => {
             var grainTime = Buffer.allocUnsafe(10);
             grainTime.writeUIntBE(this.baseTime[0], 0, 6);
@@ -107,7 +135,10 @@ module.exports = function (RED) {
               flow.id, source.id, grainDuration);
           })
         );
+        this.log('Starting stream.');
+        audioInput.pa.start();
       });
+    });
 
     this.close(() => {
       node.log('Closing the microphone - I\'ve heard enough!');
@@ -116,31 +147,5 @@ module.exports = function (RED) {
     });
   }
   util.inherits(Microphone, redioactive.Funnel);
-  RED.nodes.registerType("microphone", microphone);
-
-  function swapBytes(x, bitsPerSample) {
-    x.buffers.forEach(x => {
-      switch (bitsPerSample) {
-        case 24:
-          var tmp = 0|0;
-          for ( var y = 0|0 ; y < x.length ; y += 3|0 ) {
-            tmp = x[y];
-            x[y] = x[y + 2];
-            x[y + 2] = tmp;
-          }
-          break;
-        case 16:
-          var tmp = 0|0;
-          for ( var y = 0|0 ; y < x.length ; y += 2|0 ) {
-            tmp = x[y];
-            x[y] = x[y + 1];
-            x[y + 1] = tmp;
-          }
-          break;
-        default: // No swap
-          break;
-      }
-    });
-    return x.buffers[0];
-  }
+  RED.nodes.registerType("microphone", Microphone);
 }

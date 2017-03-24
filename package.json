@@ -8,7 +8,9 @@
     "node-red"
   ],
   "dependencies": {
-    "naudiodon" : "^0.1.2",
+    "highland": "^2.10.5",
+    "naudiodon": "^0.1.2",
+    "nmos-ledger": "^1.0.17",
     "promise": "^7.1.1"
   },
   "devDependencies": {
