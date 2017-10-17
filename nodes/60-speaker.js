@@ -16,7 +16,6 @@
 var redioactive = require('node-red-contrib-dynamorse-core').Redioactive;
 var util = require('util');
 var naudiodon = require('naudiodon');
-var Promise = require('promise');
 var Grain = require('node-red-contrib-dynamorse-core').Grain;
 
 module.exports = function (RED) {
@@ -24,11 +23,11 @@ module.exports = function (RED) {
     RED.nodes.createNode(this, config);
     redioactive.Spout.call(this, config);
 
-    this.srcFlow = null;
-    this.bitsPerSample = 16;
-    var audioOutput = null;
-    var audioStarted = false;
-    var node = this;
+    let srcTags = null;
+    let bitsPerSample = 16;
+    let audioOutput = null;
+    let audioStarted = false;
+    let node = this;
 
     this.each((x, next) => {
       if (!Grain.isGrain(x)) {
@@ -36,38 +35,41 @@ module.exports = function (RED) {
         return next();
       }
       node.log(`Received ${util.inspect(x)}.`);
-      var nextJob = (node.srcFlow) ?
+      let nextJob = (srcTags) ?
         Promise.resolve(x) :
-        (Promise.denodeify(node.getNMOSFlow, 1))(x)
-        .then(f => {
-          node.srcFlow = f;
-          var audioOptions = {};
-          node.bitsPerSample = +f.tags.encodingName[0].substring(1);
-          switch (node.bitsPerSample) {
-            case 8:
-              audioOptions.sampleFormat = naudiodon.SampleFormat8Bit;
-              break;
-            case 16:
-              audioOptions.sampleFormat = naudiodon.SampleFormat16Bit;
-              break;
-            case 24:
-              audioOptions.sampleFormat = naudiodon.SampleFormat24Bit;
-              break;
-            case 32:
-              audioOptions.sampleFormat = naudiodon.SampleFormat32Bit;
-              break;
-            default:
-              throw new Error("Cannot determine sample format bits per sample.");
-              break;
+        this.findCable(x).then(f => {
+          if (!Array.isArray(f[0].audio) && f[0].audio.length < 1) {
+            return Promise.reject('Logical cable does not contain audio.');
           }
-          audioOptions.channelCount = +f.tags.channels[0];
-          audioOptions.sampleRate = +f.tags.clockRate[0];
+          srcTags = f[0].audio[0].tags;
+          console.log(srcTags);
+          var audioOptions = {};
+          bitsPerSample = +srcTags.encodingName.substring(1);
+          switch (bitsPerSample) {
+          case 8:
+            audioOptions.sampleFormat = naudiodon.SampleFormat8Bit;
+            break;
+          case 16:
+            audioOptions.sampleFormat = naudiodon.SampleFormat16Bit;
+            break;
+          case 24:
+            audioOptions.sampleFormat = naudiodon.SampleFormat24Bit;
+            break;
+          case 32:
+            audioOptions.sampleFormat = naudiodon.SampleFormat32Bit;
+            break;
+          default:
+            throw new Error('Cannot determine sample format bits per sample.');
+          }
+          audioOptions.channelCount = srcTags.channels;
+          audioOptions.sampleRate = srcTags.clockRate;
           if (config.deviceIndex >= 0) {
             audioOptions.deviceId= config.deviceIndex;
           }
+          console.log(audioOptions);
           audioOutput = new naudiodon.AudioWriter(audioOptions);
           return new Promise((accept, reject) => {
-            var happyCallback = pa => {
+            var happyCallback = () => {
               audioOutput.removeListener('error', reject);
               audioOutput.on('error', err => {
                 node.error(`Error received from port audio library: ${err}`);
@@ -81,8 +83,9 @@ module.exports = function (RED) {
             audioOutput.once('audio_ready', happyCallback);
           });
         });
+
       nextJob.then(g => {
-        var capacity = audioOutput.write(swapBytes(g, node.bitsPerSample));
+        var capacity = audioOutput.write(swapBytes(g, bitsPerSample));
         if (audioStarted === false) {
           audioOutput.pa.start();
           audioStarted = true;
@@ -93,8 +96,7 @@ module.exports = function (RED) {
         else {
           audioOutput.once('drain', next);
         }
-      })
-      .catch(err => {
+      }).catch(err => {
         node.error(`Failed to play sound on device '${config.deviceIndex}': ${err}`);
       });
     }); // this.each
@@ -112,31 +114,32 @@ module.exports = function (RED) {
     });
   }
   util.inherits(Speaker, redioactive.Spout);
-  RED.nodes.registerType("speaker", Speaker);
+  RED.nodes.registerType('speaker', Speaker);
 
   function swapBytes(x, bitsPerSample) {
     x.buffers.forEach(x => {
+      let tmp = 0|0;
       switch (bitsPerSample) {
-        case 24:
-          var tmp = 0|0;
-          for ( var y = 0|0 ; y < x.length ; y += 3|0 ) {
-            tmp = x[y];
-            x[y] = x[y + 2];
-            x[y + 2] = tmp;
-          }
-          break;
-        case 16:
-          var tmp = 0|0;
-          for ( var y = 0|0 ; y < x.length ; y += 2|0 ) {
-            tmp = x[y];
-            x[y] = x[y + 1];
-            x[y + 1] = tmp;
-          }
-          break;
-        default: // No swap
-          break;
+      case 24:
+        tmp = 0|0;
+        for ( let y = 0|0 ; y < x.length ; y += 3|0 ) {
+          tmp = x[y];
+          x[y] = x[y + 2];
+          x[y + 2] = tmp;
+        }
+        break;
+      case 16:
+        tmp = 0|0;
+        for ( let y = 0|0 ; y < x.length ; y += 2|0 ) {
+          tmp = x[y];
+          x[y] = x[y + 1];
+          x[y + 1] = tmp;
+        }
+        break;
+      default: // No swap
+        break;
       }
     });
     return x.buffers[0];
   }
-}
+};

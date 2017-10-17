@@ -16,31 +16,30 @@
 var redioactive = require('node-red-contrib-dynamorse-core').Redioactive;
 var util = require('util');
 var naudiodon = require('naudiodon');
-var Promise = require('promise');
 var Grain = require('node-red-contrib-dynamorse-core').Grain;
-var ledger = require('nmos-ledger');
 var H = require('highland');
 
 function swapBytes(x, bitsPerSample) {
+  var tmp = 0|0;
   switch (bitsPerSample) {
-    case 24:
-      var tmp = 0|0;
-      for ( var y = 0|0 ; y < x.length ; y += 3|0 ) {
-        tmp = x[y];
-        x[y] = x[y + 2];
-        x[y + 2] = tmp;
-      }
-      break;
-    case 16:
-      var tmp = 0|0;
-      for ( var y = 0|0 ; y < x.length ; y += 2|0 ) {
-        tmp = x[y];
-        x[y] = x[y + 1];
-        x[y + 1] = tmp;
-      }
-      break;
-    default: // No swap
-      break;
+  case 24:
+    tmp = 0|0;
+    for ( let y = 0|0 ; y < x.length ; y += 3|0 ) {
+      tmp = x[y];
+      x[y] = x[y + 2];
+      x[y + 2] = tmp;
+    }
+    break;
+  case 16:
+    tmp = 0|0;
+    for ( let y = 0|0 ; y < x.length ; y += 2|0 ) {
+      tmp = x[y];
+      x[y] = x[y + 1];
+      x[y + 1] = tmp;
+    }
+    break;
+  default: // No swap
+    break;
   }
   return x;
 }
@@ -63,7 +62,7 @@ function chunker (pattern, blockAlign, bitsPerSample) {
       gl = pattern[++grainCount % pattern.length] * blockAlign;
     }
     if (b.length - position > 0) {
-      leftOver = b.slice(position)
+      leftOver = b.slice(position);
     } else {
       leftOver = null;
     }
@@ -77,6 +76,9 @@ module.exports = function (RED) {
     RED.nodes.createNode(this, config);
     redioactive.Funnel.call(this, config);
 
+    let node = this;
+    let flowID = null;
+    let sourceID = null;
     this.bitsPerSample = +config.encodingName.slice(1);
     this.channels = config.channels;
     this.blockAlign = (this.bitsPerSample * this.channels + 7) / 8 | 0;
@@ -85,10 +87,10 @@ module.exports = function (RED) {
 
     this.sampleFormat = naudiodon.SampleFormat16Bit;
     switch (this.bitsPerSample) {
-      case 8: this.sampleFormat = naudiodon.SampleFormat8Bit; break;
-      case 24: this.sampleFormat = naudiodon.SampleFormat16Bit; break;
-      case 32: this.sampleFormat = naudiodon.SampleForamt32Bit; break;
-      default: break;
+    case 8: this.sampleFormat = naudiodon.SampleFormat8Bit; break;
+    case 24: this.sampleFormat = naudiodon.SampleFormat16Bit; break;
+    case 32: this.sampleFormat = naudiodon.SampleForamt32Bit; break;
+    default: break;
     }
 
     this.baseTime = [ Date.now() / 1000|0, (Date.now() % 1000) * 1000000 ];
@@ -102,25 +104,22 @@ module.exports = function (RED) {
       audioOptions.deviceId = config.deviceIndex;
     }
     var audioInput = new naudiodon.AudioReader(audioOptions);
-    var nodeAPI = this.context().global.get('nodeAPI');
-    var ledger = this.context().global.get('ledger');
-    var localName = config.name || `${config.type}-${config.id}`;
-    var localDescription = config.description || `${config.type}-${config.id}`;
-    var pipelinesID = config.device ?
-      RED.nodes.getNode(config.device).nmos_id :
-      this.context().global.get('pipelinesID');
-    var source = new ledger.Source(null, null, localName, localDescription,
-      "urn:x-nmos:format:audio", null, null, pipelinesID, null);
-    var flow = new ledger.Flow(null, null, localName, localDescription,
-      "urn:x-nmos:format:audio", this.tags, source.id, null);
-    audioInput.once('audio_ready', pa => {
-      this.log('Audio is ready!!!!');
-      nodeAPI.putResource(source)
-      .then(() => nodeAPI.putResource(flow))
-      .then(() => {
-        this.log('Creating highland stream to pipe in audio input.');
-        this.highland(
-          H(audioInput)
+
+    let tags = {
+      format : 'audio',
+      channels : audioOptions.channelCount,
+      clockRate : audioOptions.sampleRate,
+      encodingName : `L${this.bitsPerSample}`,
+      grainDuration : [ 1, 25 ]
+    };
+    this.makeCable({ audio : [{ tags : tags }], backPressure : 'audio[0]' });
+    flowID = this.flowID();
+    sourceID = this.sourceID();
+
+    audioInput.once('audio_ready', () => {
+      this.log('Creating highland stream to pipe in audio input.');
+      this.highland(
+        H(audioInput)
           .through(chunker(this.pattern, this.blockAlign, this.bitsPerSample))
           .map(b => {
             var grainTime = Buffer.allocUnsafe(10);
@@ -132,12 +131,12 @@ module.exports = function (RED) {
             this.baseTime = [ this.baseTime[0] + this.baseTime[1] / 1000000000|0,
               this.baseTime[1] % 1000000000];
             return new Grain([b], grainTime, grainTime, null,
-              flow.id, source.id, grainDuration);
+              flowID, sourceID, grainDuration);
           })
-        );
-        this.log('Starting stream.');
-        audioInput.pa.start();
-      });
+      );
+
+      this.log('Starting stream.');
+      audioInput.pa.start();
     });
 
     this.close(() => {
@@ -147,5 +146,5 @@ module.exports = function (RED) {
     });
   }
   util.inherits(Microphone, redioactive.Funnel);
-  RED.nodes.registerType("microphone", Microphone);
-}
+  RED.nodes.registerType('microphone', Microphone);
+};
