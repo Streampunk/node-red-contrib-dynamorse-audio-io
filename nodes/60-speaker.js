@@ -17,6 +17,7 @@ var redioactive = require('node-red-contrib-dynamorse-core').Redioactive;
 var util = require('util');
 var naudiodon = require('naudiodon');
 var Grain = require('node-red-contrib-dynamorse-core').Grain;
+var uuid = require('uuid');
 
 module.exports = function (RED) {
   function Speaker (config) {
@@ -24,6 +25,7 @@ module.exports = function (RED) {
     redioactive.Spout.call(this, config);
 
     let srcTags = null;
+    let srcFlowID = null;
     let bitsPerSample = 16;
     let audioOutput = null;
     let audioStarted = false;
@@ -34,7 +36,7 @@ module.exports = function (RED) {
         node.warn('Received non-Grain payload.');
         return next();
       }
-      node.log(`Received ${util.inspect(x)}.`);
+
       let nextJob = (srcTags) ?
         Promise.resolve(x) :
         this.findCable(x).then(f => {
@@ -42,7 +44,8 @@ module.exports = function (RED) {
             return Promise.reject('Logical cable does not contain audio.');
           }
           srcTags = f[0].audio[0].tags;
-          console.log(srcTags);
+          srcFlowID = f[0].audio[0].flowID;
+
           var audioOptions = {};
           bitsPerSample = +srcTags.encodingName.substring(1);
           switch (bitsPerSample) {
@@ -85,6 +88,9 @@ module.exports = function (RED) {
         });
 
       nextJob.then(g => {
+        if (uuid.unparse(g.flow_id) !== srcFlowID)
+          return next();
+
         var capacity = audioOutput.write(swapBytes(g, bitsPerSample));
         if (audioStarted === false) {
           audioOutput.pa.start();
