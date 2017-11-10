@@ -13,11 +13,11 @@
   limitations under the License.
 */
 
-var redioactive = require('node-red-contrib-dynamorse-core').Redioactive;
-var util = require('util');
-var naudiodon = require('naudiodon');
-var Grain = require('node-red-contrib-dynamorse-core').Grain;
-var H = require('highland');
+const redioactive = require('node-red-contrib-dynamorse-core').Redioactive;
+const util = require('util');
+const naudiodon = require('naudiodon');
+const Grain = require('node-red-contrib-dynamorse-core').Grain;
+const H = require('highland');
 
 function swapBytes(x, bitsPerSample) {
   var tmp = 0|0;
@@ -139,10 +139,11 @@ module.exports = function (RED) {
       audioInput.pa.start();
     });
 
-    this.close(() => {
+    this.on('close', () => {
       node.log('Closing the microphone - I\'ve heard enough!');
       audioInput.end();
       audioInput.pa.stop();
+      this.close();
     });
   }
   util.inherits(Microphone, redioactive.Funnel);

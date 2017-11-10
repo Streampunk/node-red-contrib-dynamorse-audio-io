@@ -13,11 +13,11 @@
   limitations under the License.
 */
 
-var redioactive = require('node-red-contrib-dynamorse-core').Redioactive;
-var util = require('util');
-var naudiodon = require('naudiodon');
-var Grain = require('node-red-contrib-dynamorse-core').Grain;
-var uuid = require('uuid');
+const redioactive = require('node-red-contrib-dynamorse-core').Redioactive;
+const util = require('util');
+const naudiodon = require('naudiodon');
+const Grain = require('node-red-contrib-dynamorse-core').Grain;
+const uuid = require('uuid');
 
 module.exports = function (RED) {
   function Speaker (config) {
@@ -114,9 +114,10 @@ module.exports = function (RED) {
       node.log('No more to hear here!');
       audioOutput.end();
     });
-    this.close(() => {
+    this.on('close', () => {
       node.log('Closing the speaker - too loud!');
       audioOutput.end();
+      this.close();
     });
   }
   util.inherits(Speaker, redioactive.Spout);
