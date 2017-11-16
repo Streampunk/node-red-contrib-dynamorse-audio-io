@@ -18,6 +18,14 @@ const util = require('util');
 const naudiodon = require('naudiodon');
 const Grain = require('node-red-contrib-dynamorse-core').Grain;
 const uuid = require('uuid');
+const { Writable } = require('stream');
+
+function speakerStream(options) {
+  if (!(this instanceof speakerStream))
+    return new speakerStream(options);
+  Writable.call(this, options);
+}
+util.inherits(speakerStream, Writable);
 
 module.exports = function (RED) {
   function Speaker (config) {
@@ -27,9 +35,10 @@ module.exports = function (RED) {
     let srcTags = null;
     let srcFlowID = null;
     let bitsPerSample = 16;
-    let audioOutput = null;
+    let audioOut = null;
     let audioStarted = false;
     let node = this;
+    let sstream = null;
 
     this.each((x, next) => {
       if (!Grain.isGrain(x)) {
@@ -69,54 +78,49 @@ module.exports = function (RED) {
           if (config.deviceIndex >= 0) {
             audioOptions.deviceId= config.deviceIndex;
           }
-          console.log(audioOptions);
-          audioOutput = new naudiodon.AudioWriter(audioOptions);
-          return new Promise((accept, reject) => {
-            var happyCallback = () => {
-              audioOutput.removeListener('error', reject);
-              audioOutput.on('error', err => {
-                node.error(`Error received from port audio library: ${err}`);
-              });
-              accept(x);
-            };
-            audioOutput.once('error', err => {
-              audioOutput.removeListener('audio_ready', happyCallback);
-              reject(err);
-            });
-            audioOutput.once('audio_ready', happyCallback);
+          
+          audioOut = new naudiodon.AudioOut(audioOptions);
+          sstream = new speakerStream({
+            highWaterMark: 16384,
+            decodeStrings: false,
+            objectMode: false,
+            write: (chunk, encoding, cb) => audioOut.write(chunk, cb)
           });
+      
+          sstream.on('finish', () => audioOut.quit());
+          sstream.on('error', err => node.error(err));
+          return x;
         });
 
       nextJob.then(g => {
         if (uuid.unparse(g.flow_id) !== srcFlowID)
           return next();
 
-        var capacity = audioOutput.write(swapBytes(g, bitsPerSample));
-        if (audioStarted === false) {
-          audioOutput.pa.start();
-          audioStarted = true;
-        }
-        if (capacity === true) {
+        if (sstream.write(swapBytes(g, bitsPerSample)))
           next();
-        }
         else {
-          audioOutput.once('drain', next);
+          sstream.once('drain', next);
+        }
+          
+        if (audioStarted === false) {
+          audioOut.start();
+          audioStarted = true;
         }
       }).catch(err => {
         node.error(`Failed to play sound on device '${config.deviceIndex}': ${err}`);
       });
     }); // this.each
     this.errors((e, next) => {
-      node.warn(`Received unhandled error: ${e.message}.`);
+      node.error(`Received unhandled error: ${e.message}.`);
       setImmediate(next);
     });
     this.done(() => {
       node.log('No more to hear here!');
-      audioOutput.end();
+      sstream.end();
     });
     this.on('close', () => {
       node.log('Closing the speaker - too loud!');
-      audioOutput.end();
+      sstream.end();
       this.close();
     });
   }
