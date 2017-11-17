@@ -18,14 +18,6 @@ const util = require('util');
 const naudiodon = require('naudiodon');
 const Grain = require('node-red-contrib-dynamorse-core').Grain;
 const uuid = require('uuid');
-const { Writable } = require('stream');
-
-function speakerStream(options) {
-  if (!(this instanceof speakerStream))
-    return new speakerStream(options);
-  Writable.call(this, options);
-}
-util.inherits(speakerStream, Writable);
 
 module.exports = function (RED) {
   function Speaker (config) {
@@ -36,9 +28,7 @@ module.exports = function (RED) {
     let srcFlowID = null;
     let bitsPerSample = 16;
     let audioOut = null;
-    let audioStarted = false;
     let node = this;
-    let sstream = null;
 
     this.each((x, next) => {
       if (!Grain.isGrain(x)) {
@@ -49,7 +39,7 @@ module.exports = function (RED) {
       let nextJob = (srcTags) ?
         Promise.resolve(x) :
         this.findCable(x).then(f => {
-          if (!Array.isArray(f[0].audio) && f[0].audio.length < 1) {
+          if (!(Array.isArray(f[0].audio) && f[0].audio.length > 0)) {
             return Promise.reject('Logical cable does not contain audio.');
           }
           srcTags = f[0].audio[0].tags;
@@ -58,20 +48,11 @@ module.exports = function (RED) {
           var audioOptions = {};
           bitsPerSample = +srcTags.encodingName.substring(1);
           switch (bitsPerSample) {
-          case 8:
-            audioOptions.sampleFormat = naudiodon.SampleFormat8Bit;
-            break;
-          case 16:
-            audioOptions.sampleFormat = naudiodon.SampleFormat16Bit;
-            break;
-          case 24:
-            audioOptions.sampleFormat = naudiodon.SampleFormat24Bit;
-            break;
-          case 32:
-            audioOptions.sampleFormat = naudiodon.SampleFormat32Bit;
-            break;
-          default:
-            throw new Error('Cannot determine sample format bits per sample.');
+          case 8: audioOptions.sampleFormat = naudiodon.SampleFormat8Bit; break;
+          case 16: audioOptions.sampleFormat = naudiodon.SampleFormat16Bit; break;
+          case 24: audioOptions.sampleFormat = naudiodon.SampleFormat24Bit; break;
+          case 32: audioOptions.sampleFormat = naudiodon.SampleFormat32Bit; break;
+          default: throw new Error('Cannot determine sample format bits per sample.');
           }
           audioOptions.channelCount = srcTags.channels;
           audioOptions.sampleRate = srcTags.clockRate;
@@ -79,16 +60,9 @@ module.exports = function (RED) {
             audioOptions.deviceId= config.deviceIndex;
           }
           
-          audioOut = new naudiodon.AudioOut(audioOptions);
-          sstream = new speakerStream({
-            highWaterMark: 16384,
-            decodeStrings: false,
-            objectMode: false,
-            write: (chunk, encoding, cb) => audioOut.write(chunk, cb)
-          });
-      
-          sstream.on('finish', () => audioOut.quit());
-          sstream.on('error', err => node.error(err));
+          audioOut = new naudiodon.AudioOutput(audioOptions);
+          audioOut.on('error', err => node.error(err));
+          audioOut.start();
           return x;
         });
 
@@ -96,15 +70,10 @@ module.exports = function (RED) {
         if (uuid.unparse(g.flow_id) !== srcFlowID)
           return next();
 
-        if (sstream.write(swapBytes(g, bitsPerSample)))
+        if (audioOut.write(swapBytes(g, bitsPerSample)))
           next();
         else {
-          sstream.once('drain', next);
-        }
-          
-        if (audioStarted === false) {
-          audioOut.start();
-          audioStarted = true;
+          audioOut.once('drain', next);
         }
       }).catch(err => {
         node.error(`Failed to play sound on device '${config.deviceIndex}': ${err}`);
@@ -116,11 +85,11 @@ module.exports = function (RED) {
     });
     this.done(() => {
       node.log('No more to hear here!');
-      sstream.end();
+      audioOut.end();
     });
     this.on('close', () => {
       node.log('Closing the speaker - too loud!');
-      sstream.end();
+      audioOut.end();
       this.close();
     });
   }
