@@ -88,7 +88,8 @@ module.exports = function (RED) {
     this.sampleFormat = naudiodon.SampleFormat16Bit;
     switch (this.bitsPerSample) {
     case 8: this.sampleFormat = naudiodon.SampleFormat8Bit; break;
-    case 24: this.sampleFormat = naudiodon.SampleFormat16Bit; break;
+    case 16: this.sampleFormat = naudiodon.SampleFormat16Bit; break;
+    case 24: this.sampleFormat = naudiodon.SampleFormat24Bit; break;
     case 32: this.sampleFormat = naudiodon.SampleForamt32Bit; break;
     default: break;
     }
@@ -96,14 +97,15 @@ module.exports = function (RED) {
     this.baseTime = [ Date.now() / 1000|0, (Date.now() % 1000) * 1000000 ];
 
     var audioOptions = {
-      channelCount: this.channels,
+      channelCount:this.channels,
       sampleFormat: this.sampleFormat,
       sampleRate: this.sampleRate
     };
-    if (config.deviceIndex >= 0) {
+    if (config.deviceIndex >= 0)
       audioOptions.deviceId = config.deviceIndex;
-    }
-    var audioInput = new naudiodon.AudioReader(audioOptions);
+
+    const audioIn = new naudiodon.AudioInput(audioOptions);
+    audioIn.on('error', err => node.error(err));
 
     let tags = {
       format : 'audio',
@@ -116,33 +118,27 @@ module.exports = function (RED) {
     flowID = this.flowID();
     sourceID = this.sourceID();
 
-    audioInput.once('audio_ready', () => {
-      this.log('Creating highland stream to pipe in audio input.');
-      this.highland(
-        H(audioInput)
-          .through(chunker(this.pattern, this.blockAlign, this.bitsPerSample))
-          .map(b => {
-            var grainTime = Buffer.allocUnsafe(10);
-            grainTime.writeUIntBE(this.baseTime[0], 0, 6);
-            grainTime.writeUInt32BE(this.baseTime[1], 6);
-            var grainDuration = [ b.length / this.blockAlign|0, this.sampleRate ];
-            this.baseTime[1] = ( this.baseTime[1] +
-              grainDuration[0] * 1000000000 / grainDuration[1]|0 );
-            this.baseTime = [ this.baseTime[0] + this.baseTime[1] / 1000000000|0,
-              this.baseTime[1] % 1000000000];
-            return new Grain([b], grainTime, grainTime, null,
-              flowID, sourceID, grainDuration);
-          })
-      );
-
-      this.log('Starting stream.');
-      audioInput.pa.start();
-    });
+    this.highland(
+      H(audioIn)
+        .through(chunker(this.pattern, this.blockAlign, this.bitsPerSample))
+        .map(b => {
+          var grainTime = Buffer.allocUnsafe(10);
+          grainTime.writeUIntBE(this.baseTime[0], 0, 6);
+          grainTime.writeUInt32BE(this.baseTime[1], 6);
+          var grainDuration = [ b.length / this.blockAlign|0, this.sampleRate ];
+          this.baseTime[1] = ( this.baseTime[1] +
+            grainDuration[0] * 1000000000 / grainDuration[1]|0 );
+          this.baseTime = [ this.baseTime[0] + this.baseTime[1] / 1000000000|0,
+            this.baseTime[1] % 1000000000];
+          return new Grain([b], grainTime, grainTime, null,
+            flowID, sourceID, grainDuration);
+        })
+    );
+    audioIn.start();
 
     this.on('close', () => {
       node.log('Closing the microphone - I\'ve heard enough!');
-      audioInput.end();
-      audioInput.pa.stop();
+      audioIn.end();
       this.close();
     });
   }
