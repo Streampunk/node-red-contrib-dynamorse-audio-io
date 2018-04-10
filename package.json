@@ -8,16 +8,16 @@
     "node-red"
   ],
   "dependencies": {
-    "highland": "^2.11.1",
-    "naudiodon": "^0.4.0",
-    "nmos-ledger": "^1.0.18",
+    "highland": "^2.13.0",
+    "naudiodon": "^0.4.7",
+    "nmos-ledger": "^1.0.19",
     "uuid": "^2.0.1"
   },
   "devDependencies": {
-    "tape": "^4.8.0",
-    "eslint": "^4.9.0",
+    "tape": "^4.9.0",
+    "eslint": "^4.19.1",
     "eslint-config-google": "^0.9.1",
-    "dynamorse-test": "^0.1.2"
+    "dynamorse-test": "^0.2.0"
   },
   "scripts": {
     "test": "tape test/*Spec.js",

@@ -97,12 +97,12 @@ module.exports = function (RED) {
     this.baseTime = [ Date.now() / 1000|0, (Date.now() % 1000) * 1000000 ];
 
     var audioOptions = {
-      channelCount:this.channels,
-      sampleFormat: this.sampleFormat,
-      sampleRate: this.sampleRate
+      channelCount: +this.channels,
+      sampleFormat: +this.sampleFormat,
+      sampleRate: +this.sampleRate
     };
-    if (config.deviceIndex >= 0)
-      audioOptions.deviceId = config.deviceIndex;
+    if (+config.deviceIndex >= 0)
+      audioOptions.deviceId = +config.deviceIndex;
 
     const audioIn = new naudiodon.AudioInput(audioOptions);
     audioIn.on('error', err => node.error(err));
