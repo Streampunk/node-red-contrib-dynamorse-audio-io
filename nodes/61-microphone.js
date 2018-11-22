@@ -139,7 +139,6 @@ module.exports = function (RED) {
     this.on('close', () => {
       node.log('Closing the microphone - I\'ve heard enough!');
       audioIn.end();
-      this.close();
     });
   }
   util.inherits(Microphone, redioactive.Funnel);

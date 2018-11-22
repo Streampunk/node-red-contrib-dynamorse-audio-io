@@ -90,7 +90,6 @@ module.exports = function (RED) {
     this.on('close', () => {
       node.log('Closing the speaker - too loud!');
       audioOut.end();
-      this.close();
     });
   }
   util.inherits(Speaker, redioactive.Spout);
